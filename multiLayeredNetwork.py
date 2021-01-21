@@ -24,22 +24,24 @@ class Model():
         rng = np.random.default_rng()
 
         if baseNode == None:
-            return rng.choice(rng.choice(nodes[:len(nodes)-1])) 
+
+            return rng.choice(rng.choice([node for node in nodes[:len(nodes) - 1] if node.size]))
         else:
-            return rng.choice(rng.choice(nodes[self.indexNodes(nodes, baseNode)[1]+1:]))#Indexes startingNode and gives node in a later Layer
-    
+            return rng.choice(rng.choice([node for node in nodes[self.indexNodes(nodes, baseNode)[
+                                                   1] + 1:] if node.size]))  # Indexes startingNode and gives node in a later Layer
+
     def genModel(self):
         #Layer 1 Nodes 1-5: Input nodes
         #Layer 2 Node 8: Middle nodes, may mutate for more
         #Layer 3 Nodes 6-7: Output nodes, either 0 or 1 for states 0 or 1
-        self.nodes = np.array([np.array([1, 2, 3, 4, 5]), np.array([8, 9]), np.array([10]), np.array([11]),np.array([6, 7])])
-        self.connections = {1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8:[], 9: [], 10: [], 11: []}
+        self.nodes = np.array([np.array([1, 2, 3, 4, 5]), np.array([]), np.array([]), np.array([]),np.array([6, 7])])
+        self.connections = {1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: []}
 
         
         
 
         #Starting connections
-        for i in range(6):
+        for i in range(3):
             self.newConnection()
 
     def newConnection(self):
@@ -97,42 +99,44 @@ class Model():
     def crossover(self, parent2):
         #Breeds two brains with this one having dominant genes:
         babyModel = np.array([np.array([1, 2, 3, 4, 5]), np.array([]), np.array([]), np.array([]), np.array([6, 7])])
-        babyConnections = {1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8:[], 9: [], 10: [], 11: []}
+        babyConnections = {1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: []}
 
 
 
         #The only layer that changes, since Layer 0 is input and Layer 2 is output
-        nodeList = self.nodes[1:-1]
-        otherNodeList = parent2.nodes[1:-1]
+        nodeList = self.nodes[1:-1].copy()
+        otherNodeList = parent2.nodes[1:-1].copy()
 
         for i, nodes in enumerate(nodeList):
             for node in nodes:
                 if node in nodes:
-                    babyModel[1+i] = np.append(babyModel[1+i], node)
+                    babyModel[1+i] = np.append(babyModel[1 + i], node)
                     babyConnections[node] = []
-                    
-                if self.indexNodes(otherNodeList, node) == -1 and random.randint(0,100) >= 75 and self.indexNodes(babyModel, node) == -1:
-                    babyModel[1+i] = np.append(babyModel[1+i], node)
-                    babyConnections[node] = []
+
+                if self.indexNodes(otherNodeList, node) == -1 and random.randint(0, 100) >= 25 and self.indexNodes(
+                        babyModel, node) == -1:
+                    babyModel[1+i] = np.append(babyModel[1 + i], node)
+
+                    babyConnections[node] = self.connections[node].copy()
 
         for i, otherNodes in enumerate(otherNodeList):
             for node in otherNodes:
-                if node not in nodes and random.randint(0,100) <= 25 and self.indexNodes(babyModel, node) == -1:
-                    babyModel[1+i] = np.append(babyModel[1+i], node)
-                    babyConnections[node] = []
+                if node not in nodes and random.randint(0, 100) <= 25 and self.indexNodes(babyModel, node) == -1:
+                    babyModel[1+i] = np.append(babyModel[1 + i], node)
+                    babyConnections[node] = parent2.connections[node].copy()
 
-        #Changing connections where necessary
+        # Changing connections where necessary
         for key, value in babyConnections.items():
-            if random.randint(0, 100) >= 75:
+            if random.randint(0, 100) <= 75:
                 if key in self.connections:
                     for value in self.connections[key]:
                         if self.indexNodes(babyModel, value[0]) != -1:
-                            babyConnections[key].append(value)
-            else:
+                            babyConnections[key].append(value.copy())
+            elif random.randint(0, 100) <= 95:
                 if key in parent2.connections:
                     for value in parent2.connections[key]:
                         if self.indexNodes(babyModel, value[0]) != -1:
-                            babyConnections[key].append(value)
+                            babyConnections[key].append(value.copy())
 
         return babyModel, babyConnections
 
@@ -149,13 +153,13 @@ class Model():
         num = random.randint(0, 100)
 
         if num <= 80: #Change Weights
-            node = self.randomNode(self.nodes, None)
-
-            for i, value in enumerate(self.connections[node]):
-                if random.randint(0, 100) <= 10:
-                    self.connections[node][i][1] = random.randint(-100, 100)/100
-                else: 
-                    self.connections[node][i][1] += max(min(random.gauss(0,1)/50,1),-1)
+            for key, value in self.connections.items():
+                for i, subValue in enumerate(value):
+                    if random.randint(0, 100) <= 10:
+                        self.connections[key][i][1] = random.randint(-100, 100) / 100
+                    else:
+                        self.connections[key][i][1] += random.gauss(0, 1) / 50
+                        self.connections[key][i][1] = max(min(self.connections[key][i][1], 1), -1)
 
                     
                     
@@ -176,6 +180,7 @@ class DodgeNN():
 
         self.populationSize = 100
         models = np.empty((self.populationSize), Model)
+        self.alive_after_death = 10
 
         for i in range(self.populationSize):
             models[i] = Model()
@@ -188,36 +193,51 @@ class DodgeNN():
         for i, model in enumerate(self.models):
             model.fitScore = self.simulateGame(model, False)
 
+    def sort_by_fitness(self):
+        """I'm just wondering, why they don't have better sorting in numpy"""
+
+        fitScores = [model.fitScore for model in self.models]
+        fitScores.sort(reverse=True)
+        tmp = []
+
+        for model in self.models:
+            model.checked = False
+
+        for score in fitScores:
+            for model in self.models:
+                if model.fitScore == score and model.checked == False:
+                    tmp.append(model)
+                    model.checked = True
+
+
+        self.models = tmp.copy()
 
 
 
     def killPopulation(self, percent):
 
-        maxScore = max(node.fitScore for node in self.models)
-        stop = False
-        if nn.generations % 5 == 0:
-            for model in self.models:
-                if model.fitScore == maxScore and not stop:
-                    self.simulateGame(model, True) #Visualizes a game every 5 games, bc I'm bored and it looks cool
-                    stop = True
-        
-        movingOn = []
+        self.sort_by_fitness()
 
-    
-        for i in range(20):
-            groups = []
-     
-            for j in range(5):
-                groups.append(random.choice(self.models))
-                self.models = np.delete(self.models, np.where(self.models==groups[j]))
-            movingOn.append(groups[groups.index(max(groups, key=lambda x: x.fitScore))])
+        if nn.generations % 5 == 0:
+            self.saveModel()
+            self.simulateGame(self.models[0], True)
+
+        movingOn = self.models[:self.alive_after_death]
+
+
+
+
+        for model in self.models:
+            self.models = np.delete(self.models, np.where(self.models == model))
+        self.models = np.delete(self.models, 0)
+
 
         for model in movingOn:
             self.models = np.append(self.models, model)
 
-        
-        for i in range(self.populationSize-len(self.models)):
-            self.models = np.append(self.models, self.genBabyModel(1-percent)) #Baby making time
+
+        for i in range(self.populationSize - len(self.models)):
+            self.models = np.append(self.models, self.genBabyModel()) ##Makes a child
 
 
         
@@ -225,32 +245,44 @@ class DodgeNN():
 
             
                 
-    def genBabyModel(self, percentOfAlivePopulation):
+    def genBabyModel(self):
 
-        if random.randint(0,100) <= 25:
-            return copy.deepcopy(random.choice(self.models[:int(percentOfAlivePopulation*len(self.models))])) #Random duplicate of alive person
+        if random.randint(0, 100) <= 25:
+
+            chosenModel = copy.deepcopy(random.choice(
+                self.models[:self.alive_after_death]))
+            model = Model() # Random duplicate of alive person
+            model.nodes = chosenModel.nodes
+            model.connections = chosenModel.connections
+
+            return model
         else:
 
-            #Baby making time between two parents
-            parent1 = random.choice(self.models[:20])
+            # Baby making time between two parents
+            parent1 = random.choice(self.models[:self.alive_after_death])
 
-            parent2 = random.choice(self.models[:20])
+            #Finds another parent from same species
+            parent2 = random.choice(self.models[:self.alive_after_death])
+
             while parent1 == parent2:
-                parent2 = random.choice(self.models[:int(percentOfAlivePopulation*len(self.models))]) #I mean, you can't breed with yourself
+                parent2 = random.choice(self.models[:self.alive_after_death]) #You can't breed with yourself
 
-            #Stronger parent get's priority in genes 75% to 25%
+
+
+            # Stronger parent get's priority in genes 75% to 25%
             if parent1.fitScore >= parent2.fitScore:
                 babyModel, babyConnections = parent1.crossover(parent2)
             else:
                 babyModel, babyConnections = parent2.crossover(parent1)
-         
+
+
 
             baby = Model()
             baby.nodes, baby.connections = babyModel, babyConnections
 
-     
-            baby.mutate() #Make the baby interesting
-            
+
+            baby.mutate()  # This is how the evolution happens
+
 
             return baby
         
